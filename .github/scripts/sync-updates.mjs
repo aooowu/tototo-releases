@@ -7,6 +7,17 @@ export function manifest(bytes,version){
  if(!verify(null,payload,publicKey,Buffer.from(e.signature,'base64')))throw Error('Invalid update signature');
  const m=JSON.parse(payload);if(m.appId!=='com.wotoutoutou.client'||(m.version!==version&&!(m.schema===1&&m.version==='0.1.57-alpha.'+m.build&&m.notes?.includes('Tototo '+version+' ')))||!Number.isSafeInteger(m.build)||m.build<1||![1,2].includes(m.schema)||!/^https:\/\/github\.com\/aooowu\/tototo-releases\/releases\/download\/v[0-9.]+\/[A-Za-z0-9._-]+$/.test(m.archive?.url)||!Number.isSafeInteger(m.archive.size)||m.archive.size<=0||!/^[a-f0-9]{64}$/.test(m.archive.sha256))throw Error('Invalid update manifest');return m;
 }
+export async function downloadAsset(url,limit,repo,request=fetch,pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))){
+ if(!url.startsWith('https://github.com/'+repo+'/releases/download/'))throw Error('Unexpected download host');
+ for(let attempt=0;attempt<3;attempt++){
+  let response;
+  try{response=await request(url+'?sync='+Date.now(),{signal:AbortSignal.timeout(120000)})}
+  catch(error){if(attempt===2)throw error;await pause(1000*(attempt+1));continue}
+  if((response.status===429||response.status>=500)&&attempt<2){await response.body?.cancel();await pause(1000*(attempt+1));continue}
+  if(!response.ok)throw Error('Download '+response.status);
+  const chunks=[];let n=0;for await(const chunk of response.body){n+=chunk.length;if(n>limit)throw Error('Asset too large');chunks.push(chunk)}return Buffer.concat(chunks);
+ }
+}
 export async function sync(tag,repo,api,download){
  if(!/^v\d+\.\d+\.\d+$/.test(tag)||repo!=='aooowu/tototo-releases')throw Error('Invalid release');
  const version=tag.slice(1),release=await api(`/releases/tags/${tag}`);
@@ -43,6 +54,6 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const repo=process.env.GITHUB_REPOSITORY,event=JSON.parse(await fs.readFile(process.env.GITHUB_EVENT_PATH,'utf8')),tag=event.release?.tag_name??event.inputs?.tag;
  const api=async(path,method='GET',body)=>{const upload=method==='UPLOAD',url=(upload?'https://uploads.github.com':'https://api.github.com')+'/repos/'+repo+path;
   const response=await fetch(url,{method:upload?'POST':method,signal:AbortSignal.timeout(30000),headers:{Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(body?{'Content-Type':upload?'application/octet-stream':'application/json'}:{})},body:body?(upload?body:JSON.stringify(body)):undefined});if(!response.ok)throw Error('GitHub '+response.status+' for '+path);return response.json()};
- const download=async(url,limit)=>{if(!url.startsWith('https://github.com/'+repo+'/releases/download/'))throw Error('Unexpected download host');const r=await fetch(url+'?sync='+Date.now(),{signal:AbortSignal.timeout(120000)});if(!r.ok)throw Error('Download '+r.status);const chunks=[];let n=0;for await(const chunk of r.body){n+=chunk.length;if(n>limit)throw Error('Asset too large');chunks.push(chunk)}return Buffer.concat(chunks)};
+ const download=(url,limit)=>downloadAsset(url,limit,repo);
  await sync(tag,repo,api,download);
 }
