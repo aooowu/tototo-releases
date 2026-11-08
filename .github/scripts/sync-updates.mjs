@@ -52,8 +52,11 @@ export async function sync(tag,repo,api,download){
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const repo=process.env.GITHUB_REPOSITORY,event=JSON.parse(await fs.readFile(process.env.GITHUB_EVENT_PATH,'utf8')),tag=event.release?.tag_name??event.inputs?.tag;
+ const assets=new Map();
  const api=async(path,method='GET',body)=>{const upload=method==='UPLOAD',url=(upload?'https://uploads.github.com':'https://api.github.com')+'/repos/'+repo+path;
-  const response=await fetch(url,{method:upload?'POST':method,signal:AbortSignal.timeout(30000),headers:{Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(body?{'Content-Type':upload?'application/octet-stream':'application/json'}:{})},body:body?(upload?body:JSON.stringify(body)):undefined});if(!response.ok)throw Error('GitHub '+response.status+' for '+path);return response.json()};
- const download=(url,limit)=>downloadAsset(url,limit,repo);
+  const response=await fetch(url,{method:upload?'POST':method,signal:AbortSignal.timeout(30000),headers:{Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(body?{'Content-Type':upload?'application/octet-stream':'application/json'}:{})},body:body?(upload?body:JSON.stringify(body)):undefined});if(!response.ok)throw Error('GitHub '+response.status+' for '+path);
+  const data=await response.json();for(const asset of data.assets??[data])if(Number.isSafeInteger(asset.id)&&asset.browser_download_url)assets.set(asset.browser_download_url,asset);return data};
+ // Use GitHub's official asset API; new browser download routes can lag behind publication.
+ const download=(url,limit)=>{const asset=assets.get(url);if(!asset)throw Error('Missing asset metadata');return downloadAsset(url,limit,repo,(_url,options)=>fetch('https://api.github.com/repos/'+repo+'/releases/assets/'+asset.id+'?sync='+Date.now(),{...options,headers:{Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/octet-stream','X-GitHub-Api-Version':'2022-11-28'}}))};
  await sync(tag,repo,api,download);
 }
