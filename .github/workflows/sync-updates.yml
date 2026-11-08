@@ -1,0 +1,29 @@
+name: Publish Tototo updates once
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published version tag, e.g. v0.2.11
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: tototo-update-publish
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v0.')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch the release synchronization script
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/contents/.github/scripts/sync-updates.mjs?ref=main" --jq '.content' | base64 --decode > "$RUNNER_TEMP/sync-updates.mjs"
+      - name: Verify and synchronize all compatible update entry points
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "$RUNNER_TEMP/sync-updates.mjs"
