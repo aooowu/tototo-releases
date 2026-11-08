@@ -5,7 +5,7 @@ const publicKey='-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAFpDwszO9/jPwdCNjS2l
 export function manifest(bytes,version){
  const e=JSON.parse(bytes.toString()),payload=Buffer.from(e.payload,'base64');
  if(!verify(null,payload,publicKey,Buffer.from(e.signature,'base64')))throw Error('Invalid update signature');
- const m=JSON.parse(payload);if(m.appId!=='com.wotoutoutou.client'||m.version!==version||!Number.isSafeInteger(m.build)||m.build<1||![1,2].includes(m.schema)||!/^https:\/\/github\.com\/aooowu\/tototo-releases\/releases\/download\/v[0-9.]+\/[A-Za-z0-9._-]+$/.test(m.archive?.url)||!Number.isSafeInteger(m.archive.size)||m.archive.size<=0||!/^[a-f0-9]{64}$/.test(m.archive.sha256))throw Error('Invalid update manifest');return m;
+ const m=JSON.parse(payload);if(m.appId!=='com.wotoutoutou.client'||(m.version!==version&&!(m.schema===1&&m.version==='0.1.57-alpha.'+m.build&&m.notes?.includes('Tototo '+version+' ')))||!Number.isSafeInteger(m.build)||m.build<1||![1,2].includes(m.schema)||!/^https:\/\/github\.com\/aooowu\/tototo-releases\/releases\/download\/v[0-9.]+\/[A-Za-z0-9._-]+$/.test(m.archive?.url)||!Number.isSafeInteger(m.archive.size)||m.archive.size<=0||!/^[a-f0-9]{64}$/.test(m.archive.sha256))throw Error('Invalid update manifest');return m;
 }
 export async function sync(tag,repo,api,download){
  if(!/^v\d+\.\d+\.\d+$/.test(tag)||repo!=='aooowu/tototo-releases')throw Error('Invalid release');
@@ -17,7 +17,7 @@ export async function sync(tag,repo,api,download){
  for(const [feed,name,schema]of plans){
   const asset=release.assets.find(a=>a.name===name&&a.state==='uploaded');if(!asset)throw Error('Missing '+name);
   const bytes=await download(asset.browser_download_url,3*1024*1024),m=manifest(bytes,version);
-  if(m.schema!==schema)throw Error('Wrong feed schema');
+  if(m.schema!==schema||ready.length&&ready[0].m.build!==m.build)throw Error('Wrong feed schema or build');
   const archive=release.assets.find(a=>a.browser_download_url===m.archive.url&&a.state==='uploaded');
   if(!archive||archive.size!==m.archive.size)throw Error('Missing archive');
   if(archive.digest){if(archive.digest!=='sha256:'+m.archive.sha256)throw Error('Archive digest mismatch')}
